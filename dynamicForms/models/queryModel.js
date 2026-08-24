@@ -13,18 +13,65 @@ export async function queryModel(model, listFields, queryFields, query) {
 
         const queryValue = query[key];
 
-        if (queryFields[key]) {
+        let fieldKey = key;
+        if (key.includes('__')) {
+            fieldKey = key.split('__')[0];
+        }
 
-            if (typeof queryFields[key] === 'boolean') {
+        if (queryFields[fieldKey] === false) {
+            throw new Error(`Invalid query parameter: ${key}`);
+        }
 
-                dbQueries.push(`"${key}" = ${escapeQueryValue(queryValue)}`);
-            } else {
+        if (key.includes('__')) {
+            const [fieldKey, operator] = key.split('__');
+            if (queryFields?.[fieldKey]?.[operator] !== false) {
+                const valueToQuery = query[key];
+                if (valueToQuery) {
+                    switch (operator) {
+                        case 'lte':
+                            dbQueries.push(`"${fieldKey}" <= ${escapeQueryValue(valueToQuery)}`);
+                            break;
+                        case 'gte':
+                            dbQueries.push(`"${fieldKey}" >= ${escapeQueryValue(valueToQuery)}`);
+                            break;
+                        case 'lt':
+                            dbQueries.push(`"${fieldKey}" < ${escapeQueryValue(valueToQuery)}`);
+                            break;
+                        case 'gt':
+                            dbQueries.push(`"${fieldKey}" > ${escapeQueryValue(valueToQuery)}`);
+                            break;
+                        case 'is_null':
+                            dbQueries.push(`"${fieldKey}" IS NULL`);
+                            break;
+                        case 'is_not_null':
+                            dbQueries.push(`"${fieldKey}" IS NOT NULL`);
+                            break;
+                        case 'contains':
+                            dbQueries.push(`"${fieldKey}" ILIKE ${escapeQueryValue(`%${valueToQuery}%`)}`);
+                            break;
+                        default:
+                            throw new Error(`Invalid operator: ${operator}`);
+                    }
+                }
+            }
+            else {
+                throw new Error(`Invalid query parameter: ${key}`);
+            }
+        } else {
+            // if key is not in query fields but is a model field, do `=` query
+            const modelField = model.fields.find(field => field.name === fieldKey);
+            if (modelField && queryFields?.[fieldKey] === undefined) {
+                dbQueries.push(`"${fieldKey}" = ${escapeQueryValue(queryValue)}`);
+            } else if (queryFields?.[key] && typeof queryFields[key] === 'object') {
+                // check for custom query fields
                 const queryObject = queryFields[key];
-
-                const queryString = createFieldQuery(queryObject.query);
-
-                dbQueries.push(`(${queryString})`);
-
+                if (queryObject.query) {
+                    const queryString = createFieldQuery(queryObject.query);
+                    dbQueries.push(`(${queryString})`);
+                }
+            }
+            else {
+                dbQueries.push(`"${fieldKey}" = ${escapeQueryValue(queryValue)}`);
             }
         }
 
@@ -51,7 +98,7 @@ export async function queryModel(model, listFields, queryFields, query) {
     }
 
     return {
-        
+
         data: result.rows,
         total: countResult.rows[0].count,
         resultCount: result.rowCount,
