@@ -1,29 +1,37 @@
-import { escapeQueryValue } from "./escapeQueryValue.js";
-import { executeQuery } from "../db/postgres.js";
+import { escapeQueryValue } from "./escapeQueryValue";
+import { executeQuery } from "../db/postgres";
+import type { Model } from "../types";
 
 
+interface ValidationResult {
+    errors: Record<string, string>;
+    validatedData: Record<string, unknown>;
+}
 
 
+function validatedata(model: Model, data: Record<string, unknown>): ValidationResult {
+    const errors: Record<string, string> = {};
 
-function validatedata(model, data) {
-    const errors = {};
-
-    const validatedData = {}
+    const validatedData: Record<string, unknown> = {};
 
     for (const field of model.fields) {
         if (field.required && !data[field.name]) {
             errors[field.name] = `${field.name} is required.`;
         }
-        if(data[field.name]) {
+        if (data[field.name]) {
             validatedData[field.name] = data[field.name];
         }
     }
 
-    return {errors, validatedData};
+    return { errors, validatedData };
 }
 
 
-function createPostgresQuertInsert(model, validatedData, returnModelFields = false) {
+function createPostgresQuertInsert(
+    model: Model,
+    validatedData: Record<string, unknown>,
+    returnModelFields = false
+): string {
 
     const fields = Object.keys(validatedData).map(key => `"${key}"`);
     const values = Object.keys(validatedData).map(key => escapeQueryValue(validatedData[key]));
@@ -34,8 +42,11 @@ function createPostgresQuertInsert(model, validatedData, returnModelFields = fal
     return query;
 }
 
-export async function saveModel(model, data) {
-    const {errors, validatedData} = validatedata(model, data);
+export async function saveModel(
+    model: Model,
+    data: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+    const { errors, validatedData } = validatedata(model, data);
     if (Object.keys(errors).length > 0) {
         return { success: false, errors };
     }
@@ -46,7 +57,7 @@ export async function saveModel(model, data) {
         const result = await executeQuery(query);
         return result.rows[0];
     } catch (error) {
-        return { success: false, error: error.message };
+        return { success: false, error: (error as Error).message };
     }
 
 }
