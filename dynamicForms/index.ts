@@ -8,8 +8,8 @@ import type { AppConfig } from "./types";
 
 
 
-export function initializeApplication(app: Express, appConfig: AppConfig): void {
+export async function initializeApplication(app: Express, appConfig: AppConfig): Promise<void> {
     initializeAppState(appConfig);
     loadDatabase();
-    registerApplicationRoutes(app, appConfig.backend.apiRoutes);
+    await registerApplicationRoutes(app, appConfig.backend.apiRoutes);
 }

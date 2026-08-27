@@ -1,13 +1,13 @@
-import { executeQuery } from "../db/postgres";
+import { executeQuery } from ".";
 import { escapeQueryValue } from "./escapeQueryValue";
-import type { Model, QueryFields, QueryParams } from "../types";
+import type { Model, QueryFields, QueryParams } from "../../types";
 
-export async function queryModel(
+export async function queryModel<T = unknown>(
     model: Model,
     listFields: string[],
     queryFields: QueryFields,
     query: QueryParams
-): Promise<{ data: unknown[]; total: unknown; resultCount: number | null }> {
+): Promise<{ data: T[]; total: number; resultCount: number | null }> {
 
     // The query-field config is accessed in several dynamic shapes (boolean,
     // operator maps, custom query objects); treat it loosely here.

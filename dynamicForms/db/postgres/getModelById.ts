@@ -1,7 +1,7 @@
 import { escapeQueryValue } from "./escapeQueryValue";
-import { executeQuery } from "../db/postgres";
-import { ModelNotFoundError } from "./ModelNotFound";
-import type { Model } from "../types";
+import { executeQuery } from ".";
+import { ModelNotFoundError } from "../../models/ModelNotFound";
+import type { Model } from "../../types";
 
 
 

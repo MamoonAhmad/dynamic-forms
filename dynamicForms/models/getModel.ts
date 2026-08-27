@@ -2,7 +2,7 @@ import { getAppState, getModelByName } from "../appState";
 import { ModelNotFoundError } from "./ModelNotFound";
 import { Request, Response } from "express";
 
-export async function deleteModel(modelName: string) {
+export async function getModel(modelName: string, listFields: string[]) {
   return async (req: Request, res: Response) => {
     const appState = getAppState();
     const model = getModelByName(modelName);
@@ -10,7 +10,7 @@ export async function deleteModel(modelName: string) {
     const id = String(req.params.id);
 
     try {
-      const result = await db.deleteModel(model, id);
+      const result = await db.getModelById(model, id, listFields);
       res.json(result);
     } catch (error) {
       if (error instanceof ModelNotFoundError) {
@@ -18,7 +18,7 @@ export async function deleteModel(modelName: string) {
       }
       const errorString = error?.toString();
       res.status(500).json({
-        error: errorString ?? `Error deleting ${modelName}.`,
+        error: errorString ?? `Error getting ${modelName}.`,
       });
     }
   };

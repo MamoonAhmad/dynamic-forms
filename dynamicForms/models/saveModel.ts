@@ -1,63 +1,55 @@
-import { escapeQueryValue } from "./escapeQueryValue";
-import { executeQuery } from "../db/postgres";
 import type { Model } from "../types";
-
+import { getAppState, getModelByName } from "../appState";
+import { Request, Response } from "express";
 
 interface ValidationResult {
-    errors: Record<string, string>;
-    validatedData: Record<string, unknown>;
+  errors: Record<string, string>;
+  validatedData: Record<string, unknown>;
 }
 
+function validateData(
+  model: Model,
+  data: Record<string, unknown>,
+): ValidationResult {
+  const errors: Record<string, string> = {};
 
-function validatedata(model: Model, data: Record<string, unknown>): ValidationResult {
-    const errors: Record<string, string> = {};
+  const validatedData: Record<string, unknown> = {};
 
-    const validatedData: Record<string, unknown> = {};
-
-    for (const field of model.fields) {
-        if (field.required && !data[field.name]) {
-            errors[field.name] = `${field.name} is required.`;
-        }
-        if (data[field.name]) {
-            validatedData[field.name] = data[field.name];
-        }
+  for (const field of model.fields) {
+    if (field.required && !data[field.name]) {
+      errors[field.name] = `${field.name} is required.`;
     }
-
-    return { errors, validatedData };
-}
-
-
-function createPostgresQuertInsert(
-    model: Model,
-    validatedData: Record<string, unknown>,
-    returnModelFields = false
-): string {
-
-    const fields = Object.keys(validatedData).map(key => `"${key}"`);
-    const values = Object.keys(validatedData).map(key => escapeQueryValue(validatedData[key]));
-    let query = `INSERT INTO ${model.dbTable || model.name} (${fields.join(', ')}) VALUES (${values.join(', ')})`;
-    if (returnModelFields) {
-        query += ` RETURNING ${model.fields.map(field => `"${field.name}"`).join(', ')}`;
+    if (data[field.name]) {
+      validatedData[field.name] = data[field.name];
     }
-    return query;
+  }
+
+  return { errors, validatedData };
 }
 
-export async function saveModel(
-    model: Model,
-    data: Record<string, unknown>
-): Promise<Record<string, unknown>> {
-    const { errors, validatedData } = validatedata(model, data);
+export async function saveModel(modelName: string) {
+  return async (req: Request, res: Response) => {
+    const appState = getAppState();
+    const model = getModelByName(modelName);
+    const db = appState.db!;
+    const data = req.body;
+
+    const { errors, validatedData } = validateData(model, data);
     if (Object.keys(errors).length > 0) {
-        return { success: false, errors };
+      return res.status(400).json({ success: false, errors });
     }
-
-    const query = createPostgresQuertInsert(model, validatedData, true);
 
     try {
-        const result = await executeQuery(query);
-        return result.rows[0];
+      const result = await db.saveModel<Record<string, unknown>>(
+        model,
+        validatedData,
+      );
+      res.json(result);
     } catch (error) {
-        return { success: false, error: (error as Error).message };
+      const errorString = error?.toString();
+      res.status(500).json({
+        error: errorString ?? `Error saving ${modelName}.`,
+      });
     }
-
+  };
 }
