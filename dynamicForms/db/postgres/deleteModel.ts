@@ -1,4 +1,4 @@
-import { escapeQueryValue } from "./escapeQueryValue";
+import { escapeQueryValue, escapeIdentifier } from "./escapeQueryValue";
 import { executeQuery } from ".";
 import type { Model } from "../../types";
 import { DeleteResult } from "../types";
@@ -19,7 +19,7 @@ export async function deleteModel(model: Model, id: string | number): Promise<De
         queryId = escapeQueryValue(id);
     }
 
-    const query = `DELETE FROM ${model.dbTable || model.name} WHERE id = ${queryId}`;
+    const query = `DELETE FROM ${escapeIdentifier(model.dbTable || model.name)} WHERE ${escapeIdentifier("id")} = ${queryId}`;
     try {
         await executeQuery(query);
     } catch (error) {

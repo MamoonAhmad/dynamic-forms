@@ -2,13 +2,14 @@
 
 A config-driven CRUD API generator. You declare **models**, **API routes**, and a **database** in a single `appConfig.json`, and the backend auto-wires Express routes to Postgres. Conceptually similar to Django / PostgREST, with a goal of **near-zero code** to stand up a data-backed REST API.
 
-> **Status:** early / experimental. The core request → validate → SQL loop works, but there are known security bugs (see [Known Bugs](#known-bugs)) and large feature gaps (see [Gaps & Unsupported Use Cases](#gaps--unsupported-use-cases)). Do **not** run against untrusted input or in production yet.
+> **Status:** early / experimental. The core request → validate → SQL loop works, but security gaps remain (see [Known Bugs](#known-bugs)) along with large feature gaps (see [Gaps & Unsupported Use Cases](#gaps--unsupported-use-cases)). Do **not** run in production yet.
 
 ---
 
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Testing](#testing)
 - [Configuration](#configuration)
 - [Architecture](#architecture)
 - [Request Lifecycle](#request-lifecycle)
@@ -36,6 +37,23 @@ The server listens on port `3000`. Tables are **not** created for you — they m
 | `npm start`       | `tsx index.ts`                     |
 | `npm run dev`     | `tsx watch index.ts` (hot reload)  |
 | `npm run typecheck` | `tsc`                            |
+| `npm test`        | run the test suite (`tsx --test`)  |
+
+---
+
+## Testing
+
+Tests use the built-in **`node:test`** runner via `tsx` — no extra framework or DB is required. Run everything with `npm test`.
+
+The DB layer is tested by intercepting `pg.Pool` at the prototype level (`dynamicForms/test-support/mockDb.ts`), so every generated SQL string is **captured and asserted against** instead of hitting Postgres. This is what lets the suite prove injection safety directly on the emitted SQL.
+
+Layout:
+
+- `dynamicForms/test-support/` — `mockDb.ts` (SQL capture + fake app state) and `fixtures.ts` (models + injection payload corpora).
+- `dynamicForms/db/postgres/__tests__/` — per-query-builder tests. The SQL-injection coverage lives mainly in `queryModel.injection.test.ts`, which drives a corpus of malicious **values** (asserting each is escaped as a literal) and malicious **query-key/identifier** payloads (asserting each is rejected before any SQL runs).
+- `dynamicForms/models/__tests__/handlers.test.ts` — HTTP handler behavior (status codes, validation) plus an **end-to-end** check that an injection attempt through the LIST route reaches the DB as zero queries.
+
+When adding a query builder or an operator, add its injection cases to the corpora in `fixtures.ts` — every builder that interpolates SQL must have both a value-escaping test and an identifier-rejection/escaping test.
 
 ---
 
@@ -212,10 +230,8 @@ Ordered by severity. These are **live** in the current code.
 
 | # | Bug | Location |
 | - | --- | -------- |
-| B1 | **SQL injection via query-param *names*.** LIST pushes `"${fieldKey}" = ...` for any request key. The value is escaped but the **identifier is not** and is user-controlled, so a key containing `"` breaks out of the quoted identifier. | `db/postgres/queryModel.ts:84` (also `:74`, raw table name `:92-93`) |
-| B2 | **SQL injection via `id` in UPDATE.** `WHERE id = ${id}` interpolates `id` **unescaped**. `getModelById` and `deleteModel` escape it; update does not. `PUT /customers/1 OR 1=1` updates every row. | `db/postgres/updateModel.ts:13` |
-| B3 | **`queryFields` operator whitelist is inverted (acts as a blacklist).** `qf?.[field]?.[operator] !== false` allows an operator unless explicitly `false`, so any operator on any listed field is permitted. | `db/postgres/queryModel.ts:37` |
-| B4 | **Filtering bypasses `queryFields` entirely.** Unknown keys fall through to `=`, so clients can filter on columns never exposed in config (e.g. `?password=...`) — enumeration / info-disclosure vector. | `db/postgres/queryModel.ts:83-85` |
+| B3 | **`queryFields` operator whitelist is inverted (acts as a blacklist).** `qf?.[field]?.[operator] !== false` allows an operator unless explicitly `false`, so any operator on any listed field is permitted. | `db/postgres/queryModel.ts` |
+| B4 | **Filtering is not restricted to `queryFields` (authorization gap).** Any **real model column** is filterable via `?column=...` even when it isn't listed in `queryFields`. Exposing a sensitive column (e.g. a password hash) as a model field makes it queryable/enumerable. | `db/postgres/queryModel.ts` |
 | B5 | **Raw DB errors leaked to clients.** Handlers return `error.message` / `error.toString()`, exposing Postgres internals (table/column/constraint names). | all `models/*.ts` and `db/postgres/*.ts` |
 
 ### 🟠 Correctness
@@ -295,7 +311,7 @@ What this system **cannot** do today. This is intentionally exhaustive — it's 
 
 Suggested order (security first, then the pillars that make it genuinely low-code):
 
-1. **Close injection holes & fix the operator whitelist** (B1–B4). Validate every identifier against `model.fields` and switch to **parameterized queries** (`$1`) — this deletes `escapeQueryValue` entirely.
+1. **Fix the inverted operator whitelist** (B3) and decide the `queryFields` authorization model (B4). Longer term, consider switching to **parameterized queries** (`$1`) for values so only identifiers need escaping.
 2. **Add `ORDER BY`** (default to PK) so pagination is correct (B6).
 3. **Stop leaking raw DB errors** (B5) and **validate config at boot** (B11).
 4. **Make field metadata real** — `type` coercion/validation, auto `createdAt`/`updatedAt`, honor `primaryKey`. Biggest step toward true no-code.

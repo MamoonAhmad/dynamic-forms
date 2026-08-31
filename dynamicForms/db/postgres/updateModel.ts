@@ -1,5 +1,5 @@
 import { executeQuery } from ".";
-import { escapeQueryValue } from "./escapeQueryValue";
+import { escapeQueryValue, escapeIdentifier } from "./escapeQueryValue";
 import { Model } from "../../types";
 
 function createPostgresQueryUpdate(
@@ -8,9 +8,10 @@ function createPostgresQueryUpdate(
   id: string | number,
 ): string {
   const fields = Object.keys(validatedData).map(
-    (key) => `"${key}" = ${escapeQueryValue(validatedData[key])}`,
+    (key) => `${escapeIdentifier(key)} = ${escapeQueryValue(validatedData[key])}`,
   );
-  return `UPDATE ${model.dbTable || model.name} SET ${fields.join(", ")} WHERE id = ${id}`;
+  const table = escapeIdentifier(model.dbTable || model.name);
+  return `UPDATE ${table} SET ${fields.join(", ")} WHERE ${escapeIdentifier("id")} = ${escapeQueryValue(id)}`;
 }
 
 export const updateModel: (

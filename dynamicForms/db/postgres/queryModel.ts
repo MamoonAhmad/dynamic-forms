@@ -1,6 +1,10 @@
 import { executeQuery } from ".";
-import { escapeQueryValue } from "./escapeQueryValue";
+import { escapeQueryValue, escapeIdentifier } from "./escapeQueryValue";
 import type { Model, QueryFields, QueryParams } from "../../types";
+
+// Query-string keys that control pagination rather than filtering. They must
+// never be treated as model fields.
+const RESERVED_QUERY_KEYS = new Set(["page", "perPage"]);
 
 export async function queryModel<T = unknown>(
     model: Model,
@@ -19,78 +23,95 @@ export async function queryModel<T = unknown>(
     const perPage = Number(query.perPage) || 10;
     const offset = (page - 1) * perPage;
 
+    // Whitelist of real columns on this model. Any field key coming from the
+    // request is validated against this set before being used as a SQL
+    // identifier. This is the primary defense against identifier SQL injection
+    // (a request key like `id"=1 OR "1"="1` can no longer reach the query) and
+    // against filtering on columns that were never exposed via queryFields.
+    const modelFieldNames = new Set(model.fields.map((field) => field.name));
+
     Object.keys(query).forEach(key => {
+
+        if (RESERVED_QUERY_KEYS.has(key)) {
+            return;
+        }
 
         const queryValue = query[key];
 
         let fieldKey = key;
+        let operator: string | undefined;
         if (key.includes('__')) {
-            fieldKey = key.split('__')[0];
+            [fieldKey, operator] = key.split('__');
         }
 
+        // A custom query is configured under the raw key (not necessarily a
+        // model column), e.g. { someFilter: { query: {...} } }.
+        const isCustomQuery =
+            qf?.[key] && typeof qf[key] === 'object' && 'query' in qf[key];
+
+        // Reject anything that is neither a real model column nor a configured
+        // custom query. This closes the identifier-injection and
+        // column-enumeration holes.
+        if (!modelFieldNames.has(fieldKey) && !isCustomQuery) {
+            throw new Error(`Invalid query parameter: ${key}`);
+        }
+
+        // `false` disables the field entirely.
         if (qf[fieldKey] === false) {
             throw new Error(`Invalid query parameter: ${key}`);
         }
 
-        if (key.includes('__')) {
-            const [innerFieldKey, operator] = key.split('__');
-            if (qf?.[innerFieldKey]?.[operator] !== false) {
-                const valueToQuery = query[key];
-                if (valueToQuery) {
-                    switch (operator) {
-                        case 'lte':
-                            dbQueries.push(`"${innerFieldKey}" <= ${escapeQueryValue(valueToQuery)}`);
-                            break;
-                        case 'gte':
-                            dbQueries.push(`"${innerFieldKey}" >= ${escapeQueryValue(valueToQuery)}`);
-                            break;
-                        case 'lt':
-                            dbQueries.push(`"${innerFieldKey}" < ${escapeQueryValue(valueToQuery)}`);
-                            break;
-                        case 'gt':
-                            dbQueries.push(`"${innerFieldKey}" > ${escapeQueryValue(valueToQuery)}`);
-                            break;
-                        case 'is_null':
-                            dbQueries.push(`"${innerFieldKey}" IS NULL`);
-                            break;
-                        case 'is_not_null':
-                            dbQueries.push(`"${innerFieldKey}" IS NOT NULL`);
-                            break;
-                        case 'contains':
-                            dbQueries.push(`"${innerFieldKey}" ILIKE ${escapeQueryValue(`%${valueToQuery}%`)}`);
-                            break;
-                        default:
-                            throw new Error(`Invalid operator: ${operator}`);
-                    }
-                }
-            }
-            else {
+        if (operator) {
+            // An operator must not be explicitly disabled in the config.
+            if (qf?.[fieldKey]?.[operator] === false) {
                 throw new Error(`Invalid query parameter: ${key}`);
             }
-        } else {
-            // if key is not in query fields but is a model field, do `=` query
-            const modelField = model.fields.find(field => field.name === fieldKey);
-            if (modelField && qf?.[fieldKey] === undefined) {
-                dbQueries.push(`"${fieldKey}" = ${escapeQueryValue(queryValue)}`);
-            } else if (qf?.[key] && typeof qf[key] === 'object') {
-                // check for custom query fields
-                const queryObject = qf[key];
-                if (queryObject.query) {
-                    const queryString = createFieldQuery(queryObject.query);
-                    dbQueries.push(`(${queryString})`);
+
+            const column = escapeIdentifier(fieldKey);
+            if (queryValue) {
+                switch (operator) {
+                    case 'lte':
+                        dbQueries.push(`${column} <= ${escapeQueryValue(queryValue)}`);
+                        break;
+                    case 'gte':
+                        dbQueries.push(`${column} >= ${escapeQueryValue(queryValue)}`);
+                        break;
+                    case 'lt':
+                        dbQueries.push(`${column} < ${escapeQueryValue(queryValue)}`);
+                        break;
+                    case 'gt':
+                        dbQueries.push(`${column} > ${escapeQueryValue(queryValue)}`);
+                        break;
+                    case 'is_null':
+                        dbQueries.push(`${column} IS NULL`);
+                        break;
+                    case 'is_not_null':
+                        dbQueries.push(`${column} IS NOT NULL`);
+                        break;
+                    case 'contains':
+                        dbQueries.push(`${column} ILIKE ${escapeQueryValue(`%${queryValue}%`)}`);
+                        break;
+                    default:
+                        throw new Error(`Invalid operator: ${operator}`);
                 }
             }
-            else {
-                dbQueries.push(`"${fieldKey}" = ${escapeQueryValue(queryValue)}`);
-            }
+        } else if (isCustomQuery) {
+            // custom query object defined in the config
+            const queryString = createFieldQuery(qf[key].query);
+            dbQueries.push(`(${queryString})`);
+        } else {
+            // plain equality against a validated model column
+            dbQueries.push(`${escapeIdentifier(fieldKey)} = ${escapeQueryValue(queryValue)}`);
         }
 
     })
 
-    const listFieldsString = listFields.map(field => `"${field}"`).join(', ');
+    const tableName = escapeIdentifier(model.dbTable || model.name);
+    const listFieldsString = listFields.map(field => escapeIdentifier(field)).join(', ');
+    const whereClause = dbQueries.length > 0 ? `where ${dbQueries.join(' AND ')}` : '';
 
-    const dbQueryString = `select ${listFieldsString} from ${model.dbTable || model.name} ${dbQueries.length > 0 ? `where ${dbQueries.join(' AND ')}` : ''} limit ${perPage} offset ${offset}`;
-    const countQueryString = `select count(*) from ${model.dbTable || model.name} ${dbQueries.length > 0 ? `where ${dbQueries.join(' AND ')}` : ''}`;
+    const dbQueryString = `select ${listFieldsString} from ${tableName} ${whereClause} limit ${perPage} offset ${offset}`;
+    const countQueryString = `select count(*) from ${tableName} ${whereClause}`;
 
 
     let result, countResult;
@@ -144,15 +165,15 @@ function createFieldQuery(queryObject: Record<string, any>): string {
                 return Object.keys(queryValue).map(operator => {
                     switch (operator) {
                         case 'gte':
-                            return `"${key}" >= ${escapeQueryValue(queryValue[operator])}`;
+                            return `${escapeIdentifier(key)} >= ${escapeQueryValue(queryValue[operator])}`;
                         case 'lte':
-                            return `"${key}" <= ${escapeQueryValue(queryValue[operator])}`;
+                            return `${escapeIdentifier(key)} <= ${escapeQueryValue(queryValue[operator])}`;
                         case 'contains':
-                            return `"${key}" LIKE ${escapeQueryValue(queryValue[operator])}`;
+                            return `${escapeIdentifier(key)} LIKE ${escapeQueryValue(queryValue[operator])}`;
                     }
                 }).join(' AND ');
             } else {
-                return `${key} = ${escapeQueryValue(queryValue)}`;
+                return `${escapeIdentifier(key)} = ${escapeQueryValue(queryValue)}`;
             }
         }
     });

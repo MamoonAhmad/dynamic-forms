@@ -1,4 +1,4 @@
-import { escapeQueryValue } from "./escapeQueryValue";
+import { escapeQueryValue, escapeIdentifier } from "./escapeQueryValue";
 import { Model } from "../../types";
 import { executeQuery } from ".";
 
@@ -7,16 +7,17 @@ function createPostgresQueryInsert<T = Record<string, any>>(
   data: T,
   returnModelFields = false,
 ): string {
-    
+
   const validatedData: Record<string, any> = data as {};
 
-  const fields = Object.keys(validatedData).map((key) => `"${key}"`);
+  const fields = Object.keys(validatedData).map((key) => escapeIdentifier(key));
   const values = Object.keys(validatedData).map((key) =>
     escapeQueryValue(validatedData[key]),
   );
-  let query = `INSERT INTO ${model.dbTable || model.name} (${fields.join(", ")}) VALUES (${values.join(", ")})`;
+  const table = escapeIdentifier(model.dbTable || model.name);
+  let query = `INSERT INTO ${table} (${fields.join(", ")}) VALUES (${values.join(", ")})`;
   if (returnModelFields) {
-    query += ` RETURNING ${model.fields.map((field) => `"${field.name}"`).join(", ")}`;
+    query += ` RETURNING ${model.fields.map((field) => escapeIdentifier(field.name)).join(", ")}`;
   }
   return query;
 }

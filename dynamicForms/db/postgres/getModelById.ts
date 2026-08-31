@@ -1,4 +1,4 @@
-import { escapeQueryValue } from "./escapeQueryValue";
+import { escapeQueryValue, escapeIdentifier } from "./escapeQueryValue";
 import { executeQuery } from ".";
 import { ModelNotFoundError } from "../../models/ModelNotFound";
 import type { Model } from "../../types";
@@ -22,8 +22,8 @@ export async function getModelById(
         queryId = escapeQueryValue(id);
     }
 
-    const listFieldsString = listFields.map(field => `"${field}"`).join(', ');
-    const query = `SELECT ${listFieldsString} FROM ${model.dbTable || model.name} WHERE id = ${queryId}`;
+    const listFieldsString = listFields.map(field => escapeIdentifier(field)).join(', ');
+    const query = `SELECT ${listFieldsString} FROM ${escapeIdentifier(model.dbTable || model.name)} WHERE ${escapeIdentifier("id")} = ${queryId}`;
 
     let result;
     try {

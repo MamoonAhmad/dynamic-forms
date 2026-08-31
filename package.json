@@ -8,7 +8,7 @@
     "start": "tsx index.ts",
     "dev": "tsx watch index.ts",
     "typecheck": "tsc",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "tsx --test $(find dynamicForms -name '*.test.ts' | sort)"
   },
   "keywords": [],
   "author": "",
