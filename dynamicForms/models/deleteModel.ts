@@ -10,7 +10,7 @@ export async function deleteModel(modelName: string) {
     const id = String(req.params.id);
 
     try {
-      const result = await db.deleteModel(model, id);
+      const result = await db.deleteModel({ model, id });
       res.json(result);
     } catch (error) {
       if (error instanceof ModelNotFoundError) {

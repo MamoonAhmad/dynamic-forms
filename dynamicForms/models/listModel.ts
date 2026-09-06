@@ -1,11 +1,12 @@
-import type { QueryFields, QueryParams } from "../types";
+import type { DisabledFilters } from "../types";
 import { getAppState, getModelByName } from "../appState";
 import { Request, Response } from "express";
+import { parseListQuery } from "./parseListQuery";
 
 export async function listModel(
   modelName: string,
   listFields: string[],
-  queryFields: QueryFields,
+  disabledFilters: DisabledFilters,
 ) {
   return async (req: Request, res: Response) => {
     const appState = getAppState();
@@ -13,13 +14,19 @@ export async function listModel(
     const db = appState.db!;
 
     try {
-      const result = await db.queryModel(
+      const { queryFields, limit, offset } = parseListQuery(
+        req.query,
+        disabledFilters,
+      );
+      const result = await db.queryModel({
         model,
         listFields,
         queryFields,
-        req.query as QueryParams,
-      );
-      res.json(result);
+        limit,
+        offset,
+        countTotal: true,
+      });
+      res.status(200).json(result);
     } catch (error) {
       const errorString = error?.toString();
       res.status(500).json({

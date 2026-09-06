@@ -11,7 +11,7 @@ export const registerApplicationRoutes = async (
   routingConfig: RouteConfig[],
 ): Promise<void> => {
   for (const route of routingConfig) {
-    const { path, methods, model: modelName, listFields, queryFields } = route;
+    const { path, methods, model: modelName, listFields, disabledFilters } = route;
 
     if (!methods) {
       continue;
@@ -21,7 +21,7 @@ export const registerApplicationRoutes = async (
       if (method === "CREATE") {
         expressApp.post(path, await saveModel(modelName));
       } else if (method === "LIST") {
-        expressApp.get(path, await listModel(modelName, listFields, queryFields));
+        expressApp.get(path, await listModel(modelName, listFields, disabledFilters));
       } else if (method === "GET") {
         expressApp.get(`${path}/:id`, await getModel(modelName, listFields));
       } else if (method === "UPDATE") {

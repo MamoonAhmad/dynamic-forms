@@ -3,12 +3,16 @@ import pg from 'pg';
 
 
 export function escapeQueryValue(value: unknown): string | number {
-    if (typeof value === 'string') {
+    if (value === null || value === undefined) {
+        return 'NULL';
+    } else if (typeof value === 'string') {
         return pg.escapeLiteral(value);
     } else if (typeof value === 'number') {
         return value;
     } else if (typeof value === 'boolean') {
         return value ? 'true' : 'false';
+    } else if (value instanceof Date) {
+        return pg.escapeLiteral(value.toISOString());
     } else {
         const serialized = JSON.stringify(value);
         return pg.escapeLiteral(serialized);

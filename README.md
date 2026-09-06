@@ -92,17 +92,15 @@ Each route maps a URL path to a model and a set of HTTP methods:
   "methods": ["CREATE", "LIST", "GET", "UPDATE", "DELETE"],
   "model": "Product",
   "listFields": ["id", "name", "price", "description", "createdAt", "updatedAt"],
-  "queryFields": {
-    "name": true,
-    "price": { "gte": true, "lte": true, "eq": true },
-    "description": true
+  "disabledFilters": {
+    "description": { "contains": false }
   }
 }
 ```
 
 - `methods` → generated endpoints (see mapping below).
 - `listFields` → columns returned by LIST / GET.
-- `queryFields` → which fields (and operators) are filterable in LIST.
+- `disabledFilters` → **opt-out** filtering config (see below). The example above leaves everything queryable except `description__contains`.
 
 Method → endpoint mapping:
 
@@ -116,10 +114,25 @@ Method → endpoint mapping:
 
 ### LIST query syntax
 
-- Equality: `?name=Widget`
+- Equality: `?name=Widget` (this is the `eq` operator)
 - Operators via `field__operator`: `?price__gte=10&price__lte=100`
-- Supported operators: `lte`, `gte`, `lt`, `gt`, `is_null`, `is_not_null`, `contains`
-- Pagination: `?page=1&perPage=10` (offset-based)
+- Supported operators: `eq`, `lte`, `gte`, `lt`, `gt`, `is_null`, `is_not_null`, `contains`
+- Pagination: `?page=1&perPage=10` (offset-based; `page`/`perPage` are reserved and never treated as filters)
+- Empty values are ignored (`?name=` adds no predicate)
+
+**Filtering is opt-out.** Every real model column is queryable with every operator by default. `disabledFilters` only exists to *disable*:
+
+| Config | Effect |
+| ------ | ------ |
+| _(field absent)_ | fully queryable — the default |
+| `"field": false` | disable all filtering on the field |
+| `"field": { "contains": false }` | disable just that operator; others stay on |
+| `"field": { "eq": false }` | disable equality — blocks both `?field=v` and `?field__eq=v` |
+| `"field": { "query": { ... } }` | a named custom filter (matched on the whole query key) |
+
+You never list operators to *enable* them. A field key that isn't a real model column (or a configured custom query) is rejected outright — that's the SQL-injection guard, not an authorization one.
+
+> **Security note:** because filtering is opt-out, a sensitive column becomes queryable/enumerable the moment it's a model field. Disable it explicitly (`"passwordHash": false`) if it should never be filtered.
 
 Response shape for LIST:
 
@@ -152,7 +165,7 @@ backend/
 └── dynamicForms/
     ├── index.ts                  # initializeApplication(): state → db → routes
     ├── appState.ts               # in-memory app state + getModelByName()
-    ├── types.ts                  # Model, RouteConfig, AppConfig, QueryFields, ...
+    ├── types.ts                  # Model, RouteConfig, AppConfig, DisabledFilters, ...
     ├── apiRoutes/
     │   └── index.ts              # registerApplicationRoutes(): maps methods → handler factories
     ├── models/                   # HTTP-layer handler factories (one per operation)
@@ -230,17 +243,14 @@ Ordered by severity. These are **live** in the current code.
 
 | # | Bug | Location |
 | - | --- | -------- |
-| B3 | **`queryFields` operator whitelist is inverted (acts as a blacklist).** `qf?.[field]?.[operator] !== false` allows an operator unless explicitly `false`, so any operator on any listed field is permitted. | `db/postgres/queryModel.ts` |
-| B4 | **Filtering is not restricted to `queryFields` (authorization gap).** Any **real model column** is filterable via `?column=...` even when it isn't listed in `queryFields`. Exposing a sensitive column (e.g. a password hash) as a model field makes it queryable/enumerable. | `db/postgres/queryModel.ts` |
 | B5 | **Raw DB errors leaked to clients.** Handlers return `error.message` / `error.toString()`, exposing Postgres internals (table/column/constraint names). | all `models/*.ts` and `db/postgres/*.ts` |
 
 ### 🟠 Correctness
 
 | # | Bug | Location |
 | - | --- | -------- |
-| B6 | **No `ORDER BY`.** LIST never orders results, so offset pagination is non-deterministic across pages. | `db/postgres/queryModel.ts:92` |
-| B7 | **`config.eq` operator is broken.** `eq` is accepted by the gate but has no `case` in the `switch`, so `price__eq=...` throws `Invalid operator: eq`. | `db/postgres/queryModel.ts:40-64` |
-| B8 | **`total` type mismatch.** Typed as `number` but Postgres `count(*)` returns a string. | `db/postgres/queryModel.ts:113` |
+| B6 | **No `ORDER BY`.** LIST never orders results, so offset pagination is non-deterministic across pages. | `db/postgres/queryModel.ts` |
+| B8 | **`total` type mismatch.** Typed as `number` but Postgres `count(*)` returns a string. | `db/postgres/queryModel.ts` |
 | B9 | **Falsy-value validation.** `validateData` uses `!data[field.name]`, so `0`, `false`, and `""` are treated as "missing" for required fields. | `models/saveModel.ts`, `models/updateModel.ts` |
 | B10 | **`validateData` duplicated** across `saveModel.ts` and `updateModel.ts` — should be shared. | `models/*.ts` |
 
@@ -311,12 +321,11 @@ What this system **cannot** do today. This is intentionally exhaustive — it's 
 
 Suggested order (security first, then the pillars that make it genuinely low-code):
 
-1. **Fix the inverted operator whitelist** (B3) and decide the `queryFields` authorization model (B4). Longer term, consider switching to **parameterized queries** (`$1`) for values so only identifiers need escaping.
+1. **Stop leaking raw DB errors** (B5) and **validate config at boot** (B11). Longer term, consider switching to **parameterized queries** (`$1`) for values so only identifiers need escaping.
 2. **Add `ORDER BY`** (default to PK) so pagination is correct (B6).
-3. **Stop leaking raw DB errors** (B5) and **validate config at boot** (B11).
 4. **Make field metadata real** — `type` coercion/validation, auto `createdAt`/`updatedAt`, honor `primaryKey`. Biggest step toward true no-code.
 5. **Schema generation / migrations** from the model config.
 6. **Auth + per-model/-field permissions** as config — the largest missing pillar vs. Django.
 7. **Relationships** — hardest, but unlocks real applications.
 
-> Keep this file honest: when a bug is fixed or a gap is closed, move it out of the tables above and note it here so we retain the track record.
+> Keep this file honest: when a bug is fixed, delete its entry from the tables above entirely — this list tracks only what is currently broken.

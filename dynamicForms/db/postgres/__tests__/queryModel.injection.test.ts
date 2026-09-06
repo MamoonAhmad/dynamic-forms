@@ -15,7 +15,7 @@ import {
   UNKNOWN_COLUMNS,
 } from "../../../test-support/fixtures";
 
-const OPEN = {} as never; // queryFields config that enables everything by default
+const OPEN = {} as never; // disabledFilters config that disables nothing (all filterable)
 
 describe("queryModel — SQL injection via query-parameter NAMES", () => {
   beforeEach(() => installMockDb({ Customer: customerModel }));

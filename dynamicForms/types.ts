@@ -1,44 +1,33 @@
 import type { Pool } from "pg";
-import { DBObject } from "./db/types";
+import { DBObject, Model } from "./db/types";
 
-export interface ModelField {
-  id: string;
-  name: string;
-  type: string;
-  primaryKey?: boolean;
-  autoIncrement?: boolean;
-  required?: boolean;
-  autoInsert?: boolean;
-}
-
-export interface Model {
-  name: string;
-  fields: ModelField[];
-  dbTable?: string;
-  description?: string;
-}
 
 export type HttpMethod = "CREATE" | "LIST" | "GET" | "UPDATE" | "DELETE";
 
 /**
- * Query configuration for a single field. Can be:
- *  - a boolean (enable/disable plain equality queries)
- *  - a map of operator -> boolean (enable/disable specific operators)
- *  - a custom query object ({ query: FieldQuery })
+ * Filter configuration for a single field. Filtering is OPT-OUT: every model
+ * column is queryable with every operator by default, and this config only
+ * exists to DISABLE things. Can be:
+ *  - `false` — disable filtering on the field entirely.
+ *  - a map of operator -> boolean — set an operator to `false` to disable just
+ *    that operator (e.g. `{ contains: false }`). Plain `?field=value` counts as
+ *    the `eq` operator, so `{ eq: false }` disables it too. `true`/omitted =
+ *    enabled (the default), so you never need to list operators to turn on.
+ *
+ * A field with no entry in `disabledFilters` at all is fully queryable.
  */
-export type QueryFieldConfig =
+export type DisabledFilterConfig =
   | boolean
-  | { [operator: string]: boolean }
-  | { query: FieldQuery };
+  | { [operator: string]: boolean };
 
-export type QueryFields = Record<string, QueryFieldConfig | undefined>;
+export type DisabledFilters = Record<string, DisabledFilterConfig | undefined>;
 
 export interface RouteConfig {
   path: string;
   methods?: HttpMethod[];
   model: string;
   listFields: string[];
-  queryFields: QueryFields;
+  disabledFilters: DisabledFilters;
 }
 
 export interface DatabaseConfig {
@@ -65,10 +54,3 @@ export interface AppState extends AppConfig {
   db: DBObject;
 }
 
-/** Raw HTTP query string parameters (Express req.query). */
-export type QueryParams = Record<string, unknown>;
-
-/** Nested query object supported by createFieldQuery (AND/OR groups, operators, values). */
-export interface FieldQuery {
-  [key: string]: FieldQuery[] | Record<string, unknown> | unknown;
-}

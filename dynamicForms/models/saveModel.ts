@@ -1,6 +1,6 @@
-import type { Model } from "../types";
 import { getAppState, getModelByName } from "../appState";
 import { Request, Response } from "express";
+import { Model } from "../db/types";
 
 interface ValidationResult {
   errors: Record<string, string>;
@@ -40,10 +40,10 @@ export async function saveModel(modelName: string) {
     }
 
     try {
-      const result = await db.saveModel<Record<string, unknown>>(
+      const result = await db.saveModel<Record<string, unknown>>({
         model,
-        validatedData,
-      );
+        data: validatedData,
+      });
       res.json(result);
     } catch (error) {
       const errorString = error?.toString();

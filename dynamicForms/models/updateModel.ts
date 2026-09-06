@@ -1,5 +1,5 @@
-import type { Model } from "../types";
 import { getAppState, getModelByName } from "../appState";
+import { Model } from "../db/types";
 import { ModelNotFoundError } from "./ModelNotFound";
 import { Request, Response } from "express";
 
@@ -45,7 +45,7 @@ export async function updateModel(modelName: string, listFields: string[]) {
 
     // check if record with id exists
     try {
-      await db.getModelById(model, id, ["id"]);
+      await db.getModelById({ model, id, listFields: ["id"] });
     } catch (error) {
       if (error instanceof ModelNotFoundError) {
         return res.status(404).json({ error: "Record not found." });
@@ -59,8 +59,8 @@ export async function updateModel(modelName: string, listFields: string[]) {
     }
 
     try {
-      await db.updateModel(model, id, validatedData);
-      const result = await db.getModelById(model, id, listFields);
+      await db.updateModel({ model, id, data: validatedData });
+      const result = await db.getModelById({ model, id, listFields });
       res.json(result);
     } catch (error) {
       const errorString = error?.toString();

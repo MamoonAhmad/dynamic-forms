@@ -10,7 +10,7 @@ export async function getModel(modelName: string, listFields: string[]) {
     const id = String(req.params.id);
 
     try {
-      const result = await db.getModelById(model, id, listFields);
+      const result = await db.getModelById({ model, id, listFields });
       res.json(result);
     } catch (error) {
       if (error instanceof ModelNotFoundError) {

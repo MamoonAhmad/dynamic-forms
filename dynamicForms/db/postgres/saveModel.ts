@@ -1,13 +1,12 @@
 import { escapeQueryValue, escapeIdentifier } from "./escapeQueryValue";
-import { Model } from "../../types";
 import { executeQuery } from ".";
+import { Model, SaveModelFunctionProps } from "../types";
 
 function createPostgresQueryInsert<T = Record<string, any>>(
   model: Model,
   data: T,
   returnModelFields = false,
 ): string {
-
   const validatedData: Record<string, any> = data as {};
 
   const fields = Object.keys(validatedData).map((key) => escapeIdentifier(key));
@@ -23,10 +22,10 @@ function createPostgresQueryInsert<T = Record<string, any>>(
 }
 
 export async function saveModel<T = Record<string, any>>(
-  model: Model,
-  validatedData: T,
+  props: SaveModelFunctionProps<T>,
 ): Promise<T> {
-  const query = createPostgresQueryInsert<T>(model, validatedData, true);
+  const { model, data } = props;
+  const query = createPostgresQueryInsert<T>(model, data, true);
 
   try {
     const result = await executeQuery(query);

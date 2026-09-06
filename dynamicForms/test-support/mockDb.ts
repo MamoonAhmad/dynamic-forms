@@ -2,7 +2,7 @@ import pg from "pg";
 import assert from "node:assert";
 import { loadDatabase } from "../db/postgres";
 import { setAppState } from "../appState";
-import type { Model } from "../types";
+import { Model } from "../db/types";
 
 /**
  * SQL captured at the driver boundary. Tests assert against these strings
@@ -34,19 +34,20 @@ export function installMockDb(models: Record<string, Model> = {}): void {
   nextRows = null;
 
   if (!patched) {
-    (pg.Pool.prototype as unknown as { query: unknown }).query = async function (
-      text: string,
-    ) {
-      capturedQueries.push(text);
-      if (/count\(\*\)/i.test(text)) {
-        return { rows: [{ count: "0" }], rowCount: 1 };
-      }
-      const rows = nextRows ?? [{ id: 1 }];
-      return { rows, rowCount: rows.length };
-    };
+    (pg.Pool.prototype as unknown as { query: unknown }).query =
+      async function (text: string) {
+        capturedQueries.push(text);
+        if (/count\(\*\)/i.test(text)) {
+          return { rows: [{ count: "0" }], rowCount: 1 };
+        }
+        const rows = nextRows ?? [{ id: 1 }];
+        return { rows, rowCount: rows.length };
+      };
     // never actually connect
-    (pg.Pool.prototype as unknown as { connect: unknown }).connect = async () => ({});
-    (pg.Pool.prototype as unknown as { end: unknown }).end = async () => undefined;
+    (pg.Pool.prototype as unknown as { connect: unknown }).connect =
+      async () => ({});
+    (pg.Pool.prototype as unknown as { end: unknown }).end = async () =>
+      undefined;
     patched = true;
   }
 

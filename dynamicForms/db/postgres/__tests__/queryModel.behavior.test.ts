@@ -10,6 +10,7 @@ describe("queryModel — operators", () => {
   beforeEach(() => installMockDb({ Customer: customerModel }));
 
   const cases: Array<[string, string, string]> = [
+    ["price__eq", '"price" =', "10"],
     ["price__gte", '"price" >=', "10"],
     ["price__lte", '"price" <=', "10"],
     ["price__lt", '"price" <', "10"],
@@ -72,8 +73,14 @@ describe("queryModel — pagination", () => {
   });
 });
 
-describe("queryModel — queryFields config gating", () => {
+describe("queryModel — opt-out disabledFilters config", () => {
   beforeEach(() => installMockDb({ Customer: customerModel }));
+
+  test("every model field is queryable by default (empty config)", async () => {
+    // `secret` is a real column not mentioned anywhere in the config.
+    await queryModel(customerModel, customerListFields, {} as never, { secret: "x" });
+    assert.match(capturedQueries[0], /where "secret" = 'x'/);
+  });
 
   test("a field explicitly disabled with `false` is rejected", async () => {
     const qf = { email: false } as never;
@@ -81,6 +88,13 @@ describe("queryModel — queryFields config gating", () => {
       () => queryModel(customerModel, customerListFields, qf, { email: "x@y.com" }),
       /Invalid query parameter/,
     );
+    assert.equal(capturedQueries.length, 0);
+  });
+
+  test("disabling a field does not affect sibling fields", async () => {
+    const qf = { email: false } as never;
+    await queryModel(customerModel, customerListFields, qf, { firstName: "jo" });
+    assert.match(capturedQueries[0], /where "firstName" = 'jo'/);
   });
 
   test("an operator explicitly disabled with `false` is rejected", async () => {
@@ -89,6 +103,30 @@ describe("queryModel — queryFields config gating", () => {
       () => queryModel(customerModel, customerListFields, qf, { price__gte: "10" }),
       /Invalid query parameter/,
     );
+  });
+
+  test("disabling one operator leaves the others enabled", async () => {
+    const qf = { price: { contains: false } } as never;
+    await queryModel(customerModel, customerListFields, qf, { price__gte: "10" });
+    assert.match(capturedQueries[0], /"price" >= '10'/);
+  });
+
+  test("disabling `eq` blocks BOTH ?field=v and ?field__eq=v", async () => {
+    const qf = { firstName: { eq: false } } as never;
+    await assert.rejects(
+      () => queryModel(customerModel, customerListFields, qf, { firstName: "jo" }),
+      /Invalid query parameter/,
+    );
+    installMockDb({ Customer: customerModel });
+    await assert.rejects(
+      () => queryModel(customerModel, customerListFields, qf, { firstName__eq: "jo" }),
+      /Invalid query parameter/,
+    );
+  });
+
+  test("an empty value produces no predicate", async () => {
+    await queryModel(customerModel, customerListFields, {} as never, { firstName: "" });
+    assert.doesNotMatch(capturedQueries[0], /where/);
   });
 });
 

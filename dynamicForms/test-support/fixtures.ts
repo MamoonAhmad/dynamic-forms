@@ -1,16 +1,22 @@
-import type { Model } from "../types";
+import { Model } from "../db/types";
 
 /**
  * A representative model used across the DB tests. Includes a numeric field
  * (`price`) for operator tests and a would-be-sensitive field (`secret`) that
- * is deliberately NOT listed in most `queryFields` configs, to exercise the
+ * is deliberately NOT listed in most `disabledFilters` configs, to exercise the
  * exposure boundary.
  */
 export const customerModel: Model = {
   name: "Customer",
   dbTable: "customer",
   fields: [
-    { id: "1", name: "id", type: "number", primaryKey: true, autoIncrement: true },
+    {
+      id: "1",
+      name: "id",
+      type: "number",
+      primaryKey: true,
+      autoIncrement: true,
+    },
     { id: "2", name: "firstName", type: "string", required: true },
     { id: "3", name: "lastName", type: "string", required: true },
     { id: "4", name: "email", type: "string", required: true },
@@ -19,7 +25,13 @@ export const customerModel: Model = {
   ],
 };
 
-export const customerListFields = ["id", "firstName", "lastName", "email", "price"];
+export const customerListFields = [
+  "id",
+  "firstName",
+  "lastName",
+  "email",
+  "price",
+];
 
 /**
  * A model whose `name` is reused as the table (no `dbTable`), to prove the
@@ -69,4 +81,9 @@ export const INJECTION_KEYS: string[] = [
  * Real-but-unexposed / non-existent columns. These are not injection per se but
  * must also be rejected (they aren't declared model fields).
  */
-export const UNKNOWN_COLUMNS: string[] = ["password", "ssn", "nonexistent", "admin"];
+export const UNKNOWN_COLUMNS: string[] = [
+  "password",
+  "ssn",
+  "nonexistent",
+  "admin",
+];

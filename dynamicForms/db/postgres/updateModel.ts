@@ -1,6 +1,6 @@
 import { executeQuery } from ".";
+import { Model, UpdateModelFunctionProps } from "../types";
 import { escapeQueryValue, escapeIdentifier } from "./escapeQueryValue";
-import { Model } from "../../types";
 
 function createPostgresQueryUpdate(
   model: Model,
@@ -8,18 +8,19 @@ function createPostgresQueryUpdate(
   id: string | number,
 ): string {
   const fields = Object.keys(validatedData).map(
-    (key) => `${escapeIdentifier(key)} = ${escapeQueryValue(validatedData[key])}`,
+    (key) =>
+      `${escapeIdentifier(key)} = ${escapeQueryValue(validatedData[key])}`,
   );
   const table = escapeIdentifier(model.dbTable || model.name);
   return `UPDATE ${table} SET ${fields.join(", ")} WHERE ${escapeIdentifier("id")} = ${escapeQueryValue(id)}`;
 }
 
 export const updateModel: (
-  model: Model,
-  id: string | number,
-  validatedData: Record<string, unknown>,
-) => Promise<undefined> = async (model, id, validatedData) => {
-  const query = createPostgresQueryUpdate(model, validatedData, id);
+  props: UpdateModelFunctionProps,
+) => Promise<undefined> = async (props) => {
+  const { model, id, data } = props;
+
+  const query = createPostgresQueryUpdate(model, data, id);
 
   try {
     await executeQuery(query);
