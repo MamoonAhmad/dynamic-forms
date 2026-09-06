@@ -10,8 +10,8 @@ import {
   installMockDb,
   capturedQueries,
   setNextRows,
-} from "../../test-support/mockDb";
-import { customerModel, customerListFields } from "../../test-support/fixtures";
+} from "../../../test-support/mockDb";
+import { customerModel, customerListFields } from "../../../test-support/fixtures";
 
 interface MockRes {
   statusCode: number;
@@ -33,7 +33,9 @@ function mockRes(): MockRes {
   return res;
 }
 
-function req(parts: Partial<{ body: unknown; params: unknown; query: unknown }>): Request {
+function req(
+  parts: Partial<{ body: unknown; params: unknown; query: unknown }>,
+): Request {
   return { body: {}, params: {}, query: {}, ...parts } as unknown as Request;
 }
 
@@ -140,6 +142,30 @@ describe("LIST handler (listModel)", () => {
     await handler(req({ query: { firstName: "Jo" } }), res as unknown as Response);
     const body = res.body as { data: unknown[] };
     assert.ok(Array.isArray(body.data));
+    assert.match(capturedQueries[0], /WHERE "firstName" = 'Jo'/);
+  });
+
+  test("limit/offset paginate and are not treated as filter columns", async () => {
+    const res = mockRes();
+    const handler = await listModel("Customer", customerListFields, {});
+    await handler(
+      req({ query: { firstName: "Jo", limit: "5", offset: "10" } }),
+      res as unknown as Response,
+    );
+    const sql = capturedQueries[0];
+    assert.match(sql, /LIMIT 5 OFFSET 10/);
+    assert.doesNotMatch(sql, /"limit"/);
+    assert.doesNotMatch(sql, /"offset"/);
+  });
+
+  test("a disabled filter is rejected end-to-end (no SQL runs)", async () => {
+    const res = mockRes();
+    const handler = await listModel("Customer", customerListFields, {
+      email: false,
+    });
+    await handler(req({ query: { email: "x@y.com" } }), res as unknown as Response);
+    assert.equal(res.statusCode, 500);
+    assert.equal(capturedQueries.length, 0);
   });
 
   test("END-TO-END: an injection attempt via query key never reaches the DB", async () => {

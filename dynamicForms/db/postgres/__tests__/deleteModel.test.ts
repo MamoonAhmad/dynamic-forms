@@ -12,15 +12,12 @@ describe("deleteModel (db)", () => {
   beforeEach(() => installMockDb({ Customer: customerModel }));
 
   test("builds a quoted DELETE with an escaped id", async () => {
-    await deleteModel(customerModel, "42");
-    assert.equal(
-      capturedQueries[0],
-      `DELETE FROM "customer" WHERE "id" = '42'`,
-    );
+    await deleteModel({ model: customerModel, id: "42" });
+    assert.equal(capturedQueries[0], `DELETE FROM "customer" WHERE "id" = '42'`);
   });
 
   test("REGRESSION: a malicious id cannot widen the WHERE clause", async () => {
-    await deleteModel(customerModel, "1 OR 1=1");
+    await deleteModel({ model: customerModel, id: "1 OR 1=1" });
     assert.equal(
       capturedQueries[0],
       `DELETE FROM "customer" WHERE "id" = '1 OR 1=1'`,
@@ -29,7 +26,7 @@ describe("deleteModel (db)", () => {
 
   for (const payload of INJECTION_VALUES) {
     test(`escapes injected id ${JSON.stringify(payload)}`, async () => {
-      await deleteModel(customerModel, payload);
+      await deleteModel({ model: customerModel, id: payload });
       assert.ok(
         capturedQueries[0].includes(`WHERE "id" = ${escapedLiteral(payload)}`),
         capturedQueries[0],
@@ -38,13 +35,13 @@ describe("deleteModel (db)", () => {
   }
 
   test("returns success:false with id required when id is empty", async () => {
-    const out = await deleteModel(customerModel, "");
+    const out = await deleteModel({ model: customerModel, id: "" });
     assert.deepEqual(out, { success: false, errors: { id: "ID is required." } });
     assert.equal(capturedQueries.length, 0);
   });
 
   test("returns success:true on delete", async () => {
-    const out = await deleteModel(customerModel, "5");
+    const out = await deleteModel({ model: customerModel, id: "5" });
     assert.deepEqual(out, { success: true });
   });
 });

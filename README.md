@@ -50,8 +50,9 @@ The DB layer is tested by intercepting `pg.Pool` at the prototype level (`dynami
 Layout:
 
 - `dynamicForms/test-support/` — `mockDb.ts` (SQL capture + fake app state) and `fixtures.ts` (models + injection payload corpora).
-- `dynamicForms/db/postgres/__tests__/` — per-query-builder tests. The SQL-injection coverage lives mainly in `queryModel.injection.test.ts`, which drives a corpus of malicious **values** (asserting each is escaped as a literal) and malicious **query-key/identifier** payloads (asserting each is rejected before any SQL runs).
-- `dynamicForms/models/__tests__/handlers.test.ts` — HTTP handler behavior (status codes, validation) plus an **end-to-end** check that an injection attempt through the LIST route reaches the DB as zero queries.
+- `dynamicForms/db/postgres/__tests__/` — per-query-builder tests. The SQL-injection coverage lives mainly in `queryModel.injection.test.ts`, which drives a corpus of malicious **values** (asserting each is escaped as a literal) and malicious **field-name/identifier** payloads (asserting each is rejected before any SQL runs).
+- `dynamicForms/apiRoutes/__tests__/parseListQuery.test.ts` — the URL → structured-query parser: operator suffixes, reserved pagination keys, `in`, and opt-out `disabledFilters` enforcement.
+- `dynamicForms/apiRoutes/handlers/__tests__/handlers.test.ts` — HTTP handler behavior (status codes, validation, pagination) plus an **end-to-end** check that an injection attempt through the LIST route reaches the DB as zero queries.
 
 When adding a query builder or an operator, add its injection cases to the corpora in `fixtures.ts` — every builder that interpolates SQL must have both a value-escaping test and an identifier-rejection/escaping test.
 
@@ -104,21 +105,25 @@ Each route maps a URL path to a model and a set of HTTP methods:
 
 Method → endpoint mapping:
 
-| Method   | HTTP + Path            | Handler factory        |
-| -------- | ---------------------- | ---------------------- |
-| `CREATE` | `POST /path`           | `models/saveModel.ts`  |
-| `LIST`   | `GET /path`            | `models/listModel.ts`  |
-| `GET`    | `GET /path/:id`        | `models/getModel.ts`   |
-| `UPDATE` | `PUT /path/:id`        | `models/updateModel.ts`|
-| `DELETE` | `DELETE /path/:id`     | `models/deleteModel.ts`|
+| Method   | HTTP + Path            | Handler factory                    |
+| -------- | ---------------------- | ---------------------------------- |
+| `CREATE` | `POST /path`           | `apiRoutes/handlers/saveModel.ts`  |
+| `LIST`   | `GET /path`            | `apiRoutes/handlers/listModel.ts`  |
+| `GET`    | `GET /path/:id`        | `apiRoutes/handlers/getModel.ts`   |
+| `UPDATE` | `PUT /path/:id`        | `apiRoutes/handlers/updateModel.ts`|
+| `DELETE` | `DELETE /path/:id`     | `apiRoutes/handlers/deleteModel.ts`|
 
 ### LIST query syntax
 
 - Equality: `?name=Widget` (this is the `eq` operator)
 - Operators via `field__operator`: `?price__gte=10&price__lte=100`
-- Supported operators: `eq`, `lte`, `gte`, `lt`, `gt`, `is_null`, `is_not_null`, `contains`
-- Pagination: `?page=1&perPage=10` (offset-based; `page`/`perPage` are reserved and never treated as filters)
+- Supported operators: `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`, `is_null`, `is_not_null`
+- `in` takes a comma-separated list or a repeated param: `?id__in=1,2,3` or `?id__in=1&id__in=2`
+- `is_null` / `is_not_null` take no value: `?deletedAt__is_null`
+- Pagination: `?limit=100&offset=0` (offset-based; `limit`/`offset` are reserved and never treated as filters — default limit 100)
 - Empty values are ignored (`?name=` adds no predicate)
+
+The URL is parsed into a structured query object (`apiRoutes/parseListQuery.ts`) which the DB layer turns into SQL — the DB layer never sees raw query strings.
 
 **Filtering is opt-out.** Every real model column is queryable with every operator by default. `disabledFilters` only exists to *disable*:
 
@@ -128,9 +133,8 @@ Method → endpoint mapping:
 | `"field": false` | disable all filtering on the field |
 | `"field": { "contains": false }` | disable just that operator; others stay on |
 | `"field": { "eq": false }` | disable equality — blocks both `?field=v` and `?field__eq=v` |
-| `"field": { "query": { ... } }` | a named custom filter (matched on the whole query key) |
 
-You never list operators to *enable* them. A field key that isn't a real model column (or a configured custom query) is rejected outright — that's the SQL-injection guard, not an authorization one.
+You never list operators to *enable* them. The opt-out policy is enforced by the parser (`apiRoutes/parseListQuery.ts`); a field key that isn't a real model column is then rejected by the DB layer — that's the SQL-injection guard, not an authorization one.
 
 > **Security note:** because filtering is opt-out, a sensitive column becomes queryable/enumerable the moment it's a model field. Disable it explicitly (`"passwordHash": false`) if it should never be filtered.
 
@@ -165,18 +169,20 @@ backend/
 └── dynamicForms/
     ├── index.ts                  # initializeApplication(): state → db → routes
     ├── appState.ts               # in-memory app state + getModelByName()
-    ├── types.ts                  # Model, RouteConfig, AppConfig, DisabledFilters, ...
-    ├── apiRoutes/
-    │   └── index.ts              # registerApplicationRoutes(): maps methods → handler factories
-    ├── models/                   # HTTP-layer handler factories (one per operation)
-    │   ├── saveModel.ts          #   validate + res, returns Express handler
-    │   ├── updateModel.ts
-    │   ├── getModel.ts
-    │   ├── listModel.ts
-    │   ├── deleteModel.ts
-    │   └── ModelNotFound.ts      # ModelNotFoundError
-    └── db/
-        ├── types.ts              # DBObject interface (queryModel, getModelById, ...)
+    ├── types.ts                  # RouteConfig, AppConfig, DisabledFilters, ...
+    ├── apiRoutes/                # API layer (HTTP concerns only)
+    │   ├── index.ts              # registerApplicationRoutes(): maps methods → handlers
+    │   ├── parseListQuery.ts     # URL query string → structured ModelFieldQuery + pagination
+    │   └── handlers/             # one request-handler factory per operation
+    │       ├── saveModel.ts      #   validate + res, returns Express handler
+    │       ├── updateModel.ts
+    │       ├── getModel.ts
+    │       ├── listModel.ts
+    │       └── deleteModel.ts
+    └── db/                       # DB layer (persistence only; URL-agnostic)
+        ├── types.ts              # Model, DBObject, ModelFieldQuery, operators, ...
+        ├── constants.ts          # DB_OPERATORS / VALUELESS_OPERATORS
+        ├── ModelNotFound.ts      # ModelNotFoundError (raised by the db, caught by handlers)
         ├── assertDbPresent.ts
         └── postgres/             # Postgres implementation of DBObject
             ├── index.ts          # pool creation + executeQuery() + DBObject wiring
@@ -188,29 +194,31 @@ backend/
             └── escapeQueryValue.ts
 ```
 
+The two layers are deliberately separated: **`apiRoutes/` owns all HTTP/URL concerns** (parsing `req.query`, enforcing `disabledFilters`, writing responses) and **`db/` owns persistence** and takes a structured `ModelFieldQuery` — it never sees a raw query string. The dependency points one way, `apiRoutes → db` (which is why `ModelNotFoundError` and the `Model` type live in `db/`).
+
 ### Layers
 
 1. **Bootstrap** (`index.ts` → `dynamicForms/index.ts`) — reads `appConfig.json`, calls `initializeAppState`, `loadDatabase`, then `registerApplicationRoutes`. Route registration is async and awaited before `app.listen`.
 
 2. **App state** (`appState.ts`) — a module-level singleton holding the parsed config plus the live `db` object. `getModelByName` resolves a model from config.
 
-3. **HTTP layer** (`models/*.ts`) — each file exports a **handler factory** in a consistent format:
+3. **API layer** (`apiRoutes/`) — `handlers/*.ts` each export a **handler factory**:
 
    ```ts
    export async function saveModel(modelName: string) {
      return async (req: Request, res: Response) => {
        const model = getModelByName(modelName);
        const db = getAppState().db!;
-       // validate, call db, respond via res
+       // validate / parse, call db with a props object, respond via res
      };
    }
    ```
 
-   Factories resolve `appState`/`model`/`db` internally, validate input, call the DB abstraction, and respond directly through `res`. Because the factories are `async`, the router `await`s them during registration.
+   Factories resolve `model`/`db` internally, validate/parse input (the LIST handler delegates URL parsing to `parseListQuery`), call the DB abstraction, and respond through `res`. Because the factories are `async`, the router `await`s them during registration.
 
-4. **DB abstraction** (`db/types.ts` — `DBObject`) — a narrow interface (`queryModel`, `getModelById`, `saveModel`, `updateModel`, `deleteModel`). This is the seam intended to support multiple databases.
+4. **DB abstraction** (`db/types.ts` — `DBObject`) — a narrow interface whose methods take **props objects** (`queryModel({ model, queryFields, limit, offset, ... })`, `getModelById({ model, id, listFields })`, …). This is the seam intended to support multiple databases.
 
-5. **Postgres driver** (`db/postgres/*`) — the only implementation. Builds SQL strings and runs them through a shared `executeQuery()` on a `pg.Pool`.
+5. **Postgres driver** (`db/postgres/*`) — the only implementation. Builds SQL strings (identifiers validated against the model + escaped; values escaped) and runs them through a shared `executeQuery()` on a `pg.Pool`.
 
 ### Design intent
 
@@ -243,16 +251,15 @@ Ordered by severity. These are **live** in the current code.
 
 | # | Bug | Location |
 | - | --- | -------- |
-| B5 | **Raw DB errors leaked to clients.** Handlers return `error.message` / `error.toString()`, exposing Postgres internals (table/column/constraint names). | all `models/*.ts` and `db/postgres/*.ts` |
+| B5 | **Raw DB errors leaked to clients.** Handlers return `error.message` / `error.toString()`, exposing Postgres internals (table/column/constraint names). | all `apiRoutes/handlers/*.ts` and `db/postgres/*.ts` |
 
 ### 🟠 Correctness
 
 | # | Bug | Location |
 | - | --- | -------- |
 | B6 | **No `ORDER BY`.** LIST never orders results, so offset pagination is non-deterministic across pages. | `db/postgres/queryModel.ts` |
-| B8 | **`total` type mismatch.** Typed as `number` but Postgres `count(*)` returns a string. | `db/postgres/queryModel.ts` |
-| B9 | **Falsy-value validation.** `validateData` uses `!data[field.name]`, so `0`, `false`, and `""` are treated as "missing" for required fields. | `models/saveModel.ts`, `models/updateModel.ts` |
-| B10 | **`validateData` duplicated** across `saveModel.ts` and `updateModel.ts` — should be shared. | `models/*.ts` |
+| B9 | **Falsy-value validation.** `validateData` uses `!data[field.name]`, so `0`, `false`, and `""` are treated as "missing" for required fields. | `apiRoutes/handlers/saveModel.ts`, `apiRoutes/handlers/updateModel.ts` |
+| B10 | **`validateData` duplicated** across `saveModel.ts` and `updateModel.ts` — should be shared. | `apiRoutes/handlers/*.ts` |
 
 ### 🟡 Minor / cleanup
 

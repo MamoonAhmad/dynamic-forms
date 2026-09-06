@@ -1,7 +1,7 @@
 import { test, describe, beforeEach } from "node:test";
 import assert from "node:assert";
 import { getModelById } from "../getModelById";
-import { ModelNotFoundError } from "../../../models/ModelNotFound";
+import { ModelNotFoundError } from "../../ModelNotFound";
 import {
   installMockDb,
   capturedQueries,
@@ -14,7 +14,7 @@ describe("getModelById (db)", () => {
   beforeEach(() => installMockDb({ Customer: customerModel }));
 
   test("builds a quoted SELECT with an escaped id", async () => {
-    await getModelById(customerModel, "42", ["id", "firstName"]);
+    await getModelById({ model: customerModel, id: "42", listFields: ["id", "firstName"] });
     assert.equal(
       capturedQueries[0],
       `SELECT "id", "firstName" FROM "customer" WHERE "id" = '42'`,
@@ -23,7 +23,7 @@ describe("getModelById (db)", () => {
 
   for (const payload of INJECTION_VALUES) {
     test(`escapes injected id ${JSON.stringify(payload)}`, async () => {
-      await getModelById(customerModel, payload, ["id"]);
+      await getModelById({ model: customerModel, id: payload, listFields: ["id"] });
       assert.ok(
         capturedQueries[0].includes(`WHERE "id" = ${escapedLiteral(payload)}`),
         capturedQueries[0],
@@ -34,14 +34,18 @@ describe("getModelById (db)", () => {
   test("throws ModelNotFoundError when no row matches", async () => {
     setNextRows([]);
     await assert.rejects(
-      () => getModelById(customerModel, "999", ["id"]),
+      () => getModelById({ model: customerModel, id: "999", listFields: ["id"] }),
       ModelNotFoundError,
     );
   });
 
   test("returns the row when found", async () => {
     setNextRows([{ id: 5, firstName: "Jo" }]);
-    const row = await getModelById(customerModel, "5", ["id", "firstName"]);
+    const row = await getModelById({
+      model: customerModel,
+      id: "5",
+      listFields: ["id", "firstName"],
+    });
     assert.deepEqual(row, { id: 5, firstName: "Jo" });
   });
 });

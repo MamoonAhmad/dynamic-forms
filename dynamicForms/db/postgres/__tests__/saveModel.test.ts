@@ -12,7 +12,7 @@ describe("saveModel (db) — INSERT construction", () => {
   beforeEach(() => installMockDb({ Customer: customerModel }));
 
   test("builds a parameter-quoted INSERT with RETURNING", async () => {
-    await saveModel(customerModel, { firstName: "Jo", email: "a@b.com" });
+    await saveModel({ model: customerModel, data: { firstName: "Jo", email: "a@b.com" } });
     const sql = capturedQueries[0];
     assert.match(sql, /INSERT INTO "customer" \("firstName", "email"\)/);
     assert.match(sql, /VALUES \('Jo', 'a@b.com'\)/);
@@ -21,19 +21,22 @@ describe("saveModel (db) — INSERT construction", () => {
   });
 
   test("returns the inserted row", async () => {
-    const row = await saveModel(customerModel, { firstName: "Jo" });
+    const row = await saveModel({ model: customerModel, data: { firstName: "Jo" } });
     assert.deepEqual(row, { id: 1 });
   });
 
   for (const payload of INJECTION_VALUES) {
     test(`escapes injected value ${JSON.stringify(payload)}`, async () => {
-      await saveModel(customerModel, { firstName: payload });
+      await saveModel({ model: customerModel, data: { firstName: payload } });
       assertValueIsEscaped(capturedQueries[0], payload);
     });
   }
 
   test("escapes a malicious column name as a single identifier", async () => {
-    await saveModel(customerModel, { 'x"; DROP TABLE customer;--': "v" } as never);
+    await saveModel({
+      model: customerModel,
+      data: { 'x"; DROP TABLE customer;--': "v" },
+    } as never);
     // the key becomes one quoted identifier with doubled quotes, never raw SQL
     assert.match(capturedQueries[0], /"x""; DROP TABLE customer;--"/);
   });

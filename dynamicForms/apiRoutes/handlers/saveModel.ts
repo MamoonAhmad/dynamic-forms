@@ -1,6 +1,6 @@
-import { getAppState, getModelByName } from "../appState";
+import { getAppState, getModelByName } from "../../appState";
 import { Request, Response } from "express";
-import { Model } from "../db/types";
+import { Model } from "../../db/types";
 
 interface ValidationResult {
   errors: Record<string, string>;

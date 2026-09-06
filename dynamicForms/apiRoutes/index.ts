@@ -1,9 +1,9 @@
 import type { Express } from "express";
-import { saveModel } from "../models/saveModel";
-import { updateModel } from "../models/updateModel";
-import { getModel } from "../models/getModel";
-import { listModel } from "../models/listModel";
-import { deleteModel } from "../models/deleteModel";
+import { saveModel } from "./handlers/saveModel";
+import { updateModel } from "./handlers/updateModel";
+import { getModel } from "./handlers/getModel";
+import { listModel } from "./handlers/listModel";
+import { deleteModel } from "./handlers/deleteModel";
 import type { RouteConfig } from "../types";
 
 export const registerApplicationRoutes = async (

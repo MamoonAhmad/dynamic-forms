@@ -1,7 +1,7 @@
-import type { DisabledFilters } from "../types";
-import { getAppState, getModelByName } from "../appState";
+import type { DisabledFilters } from "../../types";
+import { getAppState, getModelByName } from "../../appState";
 import { Request, Response } from "express";
-import { parseListQuery } from "./parseListQuery";
+import { parseListQuery } from "../parseListQuery";
 
 export async function listModel(
   modelName: string,

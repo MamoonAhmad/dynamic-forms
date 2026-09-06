@@ -23,7 +23,17 @@ describe("escapeQueryValue", () => {
     assert.equal(escapeQueryValue(false), "false");
   });
 
-  test("serializes objects to an escaped JSON literal", () => {
+  test("maps null/undefined to the SQL NULL keyword (not the string 'null')", () => {
+    assert.equal(escapeQueryValue(null), "NULL");
+    assert.equal(escapeQueryValue(undefined), "NULL");
+  });
+
+  test("renders Date as an escaped ISO literal", () => {
+    const d = new Date("2020-01-02T03:04:05.000Z");
+    assert.equal(escapeQueryValue(d), pg.escapeLiteral("2020-01-02T03:04:05.000Z"));
+  });
+
+  test("serializes plain objects to an escaped JSON literal", () => {
     const out = escapeQueryValue({ a: 1 });
     assert.equal(out, pg.escapeLiteral(JSON.stringify({ a: 1 })));
   });

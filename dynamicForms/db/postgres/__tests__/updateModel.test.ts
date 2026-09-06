@@ -13,7 +13,7 @@ describe("updateModel (db) — UPDATE construction", () => {
   beforeEach(() => installMockDb({ Customer: customerModel }));
 
   test("builds a quoted UPDATE with an escaped id predicate", async () => {
-    await updateModel(customerModel, 7, { firstName: "Jo" });
+    await updateModel({ model: customerModel, id: 7, data: { firstName: "Jo" } });
     assert.equal(
       capturedQueries[0],
       `UPDATE "customer" SET "firstName" = 'Jo' WHERE "id" = 7`,
@@ -22,7 +22,7 @@ describe("updateModel (db) — UPDATE construction", () => {
 
   test("REGRESSION: a malicious id cannot widen the WHERE clause", async () => {
     // Previously `WHERE id = 1 OR 1=1` would update every row.
-    await updateModel(customerModel, "1 OR 1=1", { firstName: "Jo" });
+    await updateModel({ model: customerModel, id: "1 OR 1=1", data: { firstName: "Jo" } });
     assert.equal(
       capturedQueries[0],
       `UPDATE "customer" SET "firstName" = 'Jo' WHERE "id" = '1 OR 1=1'`,
@@ -31,16 +31,13 @@ describe("updateModel (db) — UPDATE construction", () => {
 
   for (const payload of INJECTION_VALUES) {
     test(`escapes injected id ${JSON.stringify(payload)}`, async () => {
-      await updateModel(customerModel, payload, { firstName: "Jo" });
+      await updateModel({ model: customerModel, id: payload, data: { firstName: "Jo" } });
       const sql = capturedQueries[0];
-      assert.ok(
-        sql.includes(`WHERE "id" = ${escapedLiteral(payload)}`),
-        sql,
-      );
+      assert.ok(sql.includes(`WHERE "id" = ${escapedLiteral(payload)}`), sql);
     });
 
     test(`escapes injected SET value ${JSON.stringify(payload)}`, async () => {
-      await updateModel(customerModel, 1, { firstName: payload });
+      await updateModel({ model: customerModel, id: 1, data: { firstName: payload } });
       assertValueIsEscaped(capturedQueries[0], payload);
     });
   }

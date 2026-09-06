@@ -1,6 +1,6 @@
-import { getAppState, getModelByName } from "../appState";
-import { Model } from "../db/types";
-import { ModelNotFoundError } from "./ModelNotFound";
+import { getAppState, getModelByName } from "../../appState";
+import { Model } from "../../db/types";
+import { ModelNotFoundError } from "../../db/ModelNotFound";
 import { Request, Response } from "express";
 
 interface ValidationResult {

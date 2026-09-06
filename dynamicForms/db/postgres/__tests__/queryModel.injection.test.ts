@@ -1,6 +1,7 @@
 import { test, describe, beforeEach } from "node:test";
 import assert from "node:assert";
 import { queryModel } from "../queryModel";
+import type { ModelFieldQuery, QueryModelProps } from "../../types";
 import {
   installMockDb,
   capturedQueries,
@@ -15,16 +16,28 @@ import {
   UNKNOWN_COLUMNS,
 } from "../../../test-support/fixtures";
 
-const OPEN = {} as never; // disabledFilters config that disables nothing (all filterable)
+function run(
+  queryFields: ModelFieldQuery,
+  extra: Partial<QueryModelProps> = {},
+): Promise<unknown> {
+  return queryModel({
+    model: customerModel,
+    listFields: customerListFields,
+    queryFields,
+    limit: 100,
+    offset: 0,
+    ...extra,
+  });
+}
 
-describe("queryModel — SQL injection via query-parameter NAMES", () => {
+describe("queryModel — SQL injection via field NAMES", () => {
   beforeEach(() => installMockDb({ Customer: customerModel }));
 
-  for (const key of INJECTION_KEYS) {
-    test(`rejects malicious key ${JSON.stringify(key)} before building SQL`, async () => {
+  for (const key of [...INJECTION_KEYS, ...UNKNOWN_COLUMNS]) {
+    test(`rejects non-column field ${JSON.stringify(key)} before building SQL`, async () => {
       await assert.rejects(
-        () => queryModel(customerModel, customerListFields, OPEN, { [key]: "x" }),
-        /Invalid query parameter/,
+        () => run({ [key]: "x" }),
+        /Invalid model field name/,
       );
       // Nothing must have reached the database.
       assert.equal(
@@ -35,20 +48,26 @@ describe("queryModel — SQL injection via query-parameter NAMES", () => {
     });
   }
 
-  for (const col of UNKNOWN_COLUMNS) {
-    test(`rejects unexposed/non-existent column ${JSON.stringify(col)}`, async () => {
-      await assert.rejects(
-        () => queryModel(customerModel, customerListFields, OPEN, { [col]: "x" }),
-        /Invalid query parameter/,
-      );
-      assert.equal(capturedQueries.length, 0);
-    });
-  }
-
-  test("rejects a malicious key even in operator form (evil__gte)", async () => {
+  test("rejects a bad field name inside an operator object", async () => {
     await assert.rejects(
-      () => queryModel(customerModel, customerListFields, OPEN, { "evil__gte": "1" }),
-      /Invalid query parameter/,
+      () => run({ 'bad"col': { gte: "1" } }),
+      /Invalid model field name/,
+    );
+    assert.equal(capturedQueries.length, 0);
+  });
+
+  test("rejects a bad field name nested inside AND/OR", async () => {
+    await assert.rejects(
+      () => run({ AND: [{ 'bad"col': "1" }] }),
+      /Invalid model field name/,
+    );
+    assert.equal(capturedQueries.length, 0);
+  });
+
+  test("rejects a bad column in listFields before building SQL", async () => {
+    await assert.rejects(
+      () => run({}, { listFields: ["id", 'evil"; DROP TABLE customer;--'] }),
+      /Invalid model field name/,
     );
     assert.equal(capturedQueries.length, 0);
   });
@@ -59,26 +78,29 @@ describe("queryModel — SQL injection via VALUES", () => {
 
   for (const payload of INJECTION_VALUES) {
     test(`escapes equality value ${JSON.stringify(payload)}`, async () => {
-      await queryModel(customerModel, customerListFields, OPEN, { firstName: payload });
+      await run({ firstName: payload });
       const sql = capturedQueries[0];
       assertValueIsEscaped(sql, payload);
       // the column is a quoted identifier, the value a quoted literal
       // (` E'...'` — with a leading space — when the payload needs C-style
       // escaping, e.g. a backslash)
-      assert.match(sql, /where "firstName" =\s+E?'/);
+      assert.match(sql, /WHERE "firstName" =\s+E?'/);
     });
 
     test(`escapes contains value ${JSON.stringify(payload)}`, async () => {
-      await queryModel(customerModel, customerListFields, OPEN, {
-        firstName__contains: payload,
-      });
+      await run({ firstName: { contains: payload } });
       const sql = capturedQueries[0];
       assertValueIsEscaped(sql, `%${payload}%`);
       assert.match(sql, /"firstName" ILIKE\s+E?'/);
     });
 
     test(`escapes numeric-operator value ${JSON.stringify(payload)}`, async () => {
-      await queryModel(customerModel, customerListFields, OPEN, { price__gte: payload });
+      await run({ price: { gte: payload } });
+      assertValueIsEscaped(capturedQueries[0], payload);
+    });
+
+    test(`escapes IN-list value ${JSON.stringify(payload)}`, async () => {
+      await run({ price: { in: [payload] } });
       assertValueIsEscaped(capturedQueries[0], payload);
     });
   }
@@ -88,16 +110,22 @@ describe("queryModel — identifiers are always quoted", () => {
   beforeEach(() => installMockDb({ Customer: customerModel }));
 
   test("table name and list fields are double-quoted", async () => {
-    await queryModel(customerModel, customerListFields, OPEN, {});
+    await run({});
     const sql = capturedQueries[0];
-    assert.match(sql, /from "customer"/);
-    assert.match(sql, /select "id", "firstName", "lastName", "email", "price"/);
+    assert.match(sql, /FROM "customer"/);
+    assert.match(sql, /SELECT "id", "firstName", "lastName", "email", "price"/);
   });
 
   test("falls back to (escaped) model.name when dbTable is absent", async () => {
     installMockDb({ Weird: noDbTableModel });
-    await queryModel(noDbTableModel, ["id", "value"], OPEN, {});
+    await queryModel({
+      model: noDbTableModel,
+      listFields: ["id", "value"],
+      queryFields: {},
+      limit: 100,
+      offset: 0,
+    });
     // model.name is "weird table" — must be quoted, not left bare
-    assert.match(capturedQueries[0], /from "weird table"/);
+    assert.match(capturedQueries[0], /FROM "weird table"/);
   });
 });

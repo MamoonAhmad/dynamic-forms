@@ -1,6 +1,6 @@
 import { escapeQueryValue, escapeIdentifier } from "./escapeQueryValue";
 import { executeQuery } from ".";
-import { ModelNotFoundError } from "../../models/ModelNotFound";
+import { ModelNotFoundError } from "../ModelNotFound";
 import { GetModelByIdFunctionProps } from "../types";
 
 export async function getModelById(
