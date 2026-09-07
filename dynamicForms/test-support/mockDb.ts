@@ -1,7 +1,7 @@
 import pg from "pg";
 import assert from "node:assert";
 import { loadDatabase } from "../db/postgres";
-import { setAppState } from "../appState";
+import { initializeAppState } from "../appState";
 import { Model } from "../db/types";
 
 /**
@@ -43,9 +43,19 @@ export function installMockDb(models: Record<string, Model> = {}): void {
         const rows = nextRows ?? [{ id: 1 }];
         return { rows, rowCount: rows.length };
       };
-    // never actually connect
+    // never actually connect — return a capturing client (used by migrations)
     (pg.Pool.prototype as unknown as { connect: unknown }).connect =
-      async () => ({});
+      async () => ({
+        query: async (text: string) => {
+          capturedQueries.push(text);
+          if (/count\(\*\)/i.test(text)) {
+            return { rows: [{ count: "0" }], rowCount: 1 };
+          }
+          const rows = nextRows ?? [{ id: 1 }];
+          return { rows, rowCount: rows.length };
+        },
+        release: () => {},
+      });
     (pg.Pool.prototype as unknown as { end: unknown }).end = async () =>
       undefined;
     patched = true;
@@ -57,18 +67,20 @@ export function installMockDb(models: Record<string, Model> = {}): void {
   process.env.DB_PASSWORD = "p";
   process.env.DB_NAME = "d";
 
-  setAppState("models", models);
-  setAppState("backend", {
-    apiRoutes: [],
-    database: {
-      type: "postgres",
-      host: "DB_HOST",
-      port: "DB_PORT",
-      user: "DB_USER",
-      password: "DB_PASSWORD",
-      database: "DB_NAME",
+  initializeAppState({
+    models: Object.values(models),
+    backend: {
+      apiRoutes: [],
+      database: {
+        type: "postgres",
+        host: "DB_HOST",
+        port: "DB_PORT",
+        user: "DB_USER",
+        password: "DB_PASSWORD",
+        database: "DB_NAME",
+      },
     },
-  } as never);
+  });
 
   loadDatabase();
 }

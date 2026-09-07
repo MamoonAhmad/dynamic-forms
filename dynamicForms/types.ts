@@ -45,7 +45,7 @@ export interface BackendConfig {
 }
 
 export interface AppConfig {
-  models: Record<string, Model>;
+  models: Model[];
   backend: BackendConfig;
 }
 

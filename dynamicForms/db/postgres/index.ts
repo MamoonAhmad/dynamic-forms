@@ -19,6 +19,15 @@ export async function executeQuery(query: string): Promise<QueryResult> {
   return result;
 }
 
+
+export async function getPostgresClient() {
+  const client = await dbConnectionObject.pool?.connect()
+  if(!client) {
+    throw new Error("Could not get a client for postgres.")
+  }
+  return client;
+}
+
 export function loadDatabase(): void {
   const appState = getAppState();
   const databaseConfig = appState.backend.database;
@@ -58,11 +67,14 @@ export function loadDatabase(): void {
     database: dbDatabase,
   });
 
+
+  
   setAppState("db", {
     queryModel,
     getModelById,
     deleteModel,
     updateModel,
     saveModel,
+    executeQuery
   });
 }

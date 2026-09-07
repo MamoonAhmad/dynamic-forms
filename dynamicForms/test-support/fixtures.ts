@@ -7,6 +7,7 @@ import { Model } from "../db/types";
  * exposure boundary.
  */
 export const customerModel: Model = {
+  id: 1,
   name: "Customer",
   dbTable: "customer",
   fields: [
@@ -38,6 +39,7 @@ export const customerListFields = [
  * fallback table name is also escaped.
  */
 export const noDbTableModel: Model = {
+  id: 2,
   name: "weird table",
   fields: [
     { id: "1", name: "id", type: "number", primaryKey: true },

@@ -1,3 +1,5 @@
+import { QueryResult } from "pg";
+
 export interface ModelField {
   id: string;
   name: string;
@@ -6,10 +8,13 @@ export interface ModelField {
   autoIncrement?: boolean;
   required?: boolean;
   autoInsert?: boolean;
+  index?: boolean;
+  defaultValue?: any;
 }
 
 export interface Model {
   name: string;
+  id: number;
   fields: ModelField[];
   dbTable?: string;
   description?: string;
@@ -59,12 +64,15 @@ export type SaveModelFunction = <T = Record<string, any>>(
   props: SaveModelFunctionProps<T>,
 ) => Promise<T>;
 
+export type ExecuteQueryFunction = (query: string) => Promise<QueryResult>;
+
 export type DBObject = {
   queryModel: QueryModelFunction;
   getModelById: GetModelByIdFunction;
   deleteModel: DeleteModelFunction;
   updateModel: UpdateModelFunction;
   saveModel: SaveModelFunction;
+  executeQuery: ExecuteQueryFunction;
 };
 
 /**
